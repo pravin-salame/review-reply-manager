@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "review-replies",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-08",
+  "assets": {
+    "directory": "./public"
+  },
+  "vars": {
+    // A Gemini model with a free tier. Copy the exact ID from Google AI Studio and change it here if needed.
+    "GEMINI_MODEL": "gemini-3.5-flash-lite"
+  }
+}

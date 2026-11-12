@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review Reply Manager</title>
+<style>
+:root{--bg:#f3f6f8;--card:#fff;--ink:#14232b;--mute:#5a6b75;--line:#d5dee3;--accent:#0f6e8c;--warn:#b45309;--bad:#b42318;--ok:#1a7a4c}
+@media (prefers-color-scheme:dark){:root{--bg:#101a20;--card:#17242c;--ink:#e8f0f3;--mute:#9fb0ba;--line:#2b3b45;--accent:#4fb3d4;--warn:#f0a24b;--bad:#ff7b6e;--ok:#5fd49a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:1.7rem;line-height:1.2;margin:0 0 6px}
+.sub{color:var(--mute);margin:0 0 24px}
+label{display:block;font-weight:600;margin:16px 0 6px}
+input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font:inherit}
+textarea{min-height:150px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:560px){.row{grid-template-columns:1fr}}
+.hint{color:var(--mute);font-size:.9rem;margin:4px 0 0}
+button{font:inherit;font-weight:600;border:0;border-radius:6px;padding:11px 18px;background:var(--accent);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent);padding:6px 12px;font-size:.9rem}
+button:disabled{opacity:.6;cursor:wait}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#status{margin:14px 0 0;min-height:1.4em;color:var(--bad)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-top:16px}
+.card.attn{border-left:5px solid var(--warn)}
+.quote{color:var(--mute);margin:0 0 10px;white-space:pre-wrap}
+.badge{display:inline-block;font-size:.85rem;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid currentColor;margin-bottom:8px}
+.positive{color:var(--ok)}.neutral{color:var(--mute)}.negative{color:var(--bad)}.attn-b{color:var(--warn)}
+.reason{margin:0 0 10px;color:var(--warn)}
+.card textarea{min-height:110px}
+.foot{margin-top:36px;color:var(--mute);font-size:.88rem}
+</style>
+</head>
+<body>
+<main class="wrap">
+<p class="hint"><a href="/">About this tool</a></p>
+<h1>Review Reply Manager</h1>
+<p class="sub">Paste your Google reviews. Get a draft reply for each one, and a flag on the ones that need you.</p>
+
+<div class="row">
+  <div><label for="business">Business name</label><input id="business" placeholder="Sunrise Dental"></div>
+  <div><label for="tone">Tone</label>
+    <select id="tone"><option value="warm">Warm</option><option value="professional">Professional</option><option value="brief">Brief</option></select></div>
+</div>
+
+<label for="notes">Facts the replies may use</label>
+<textarea id="notes" style="min-height:80px" placeholder="Contact: hello@example.com or 555-0100. Open Mon to Sat. We offer free re-dos within 7 days."></textarea>
+<p class="hint">Replies will only use facts you write here.</p>
+
+<label for="reviews">Reviews</label>
+<textarea id="reviews" placeholder="Paste one review, or several separated by a line containing only ---. Include the star rating in the text, for example: 2 stars. Waited 40 minutes..."></textarea>
+<p class="hint">Up to 10 reviews at a time. Public reviews only: do not paste private customer data.</p>
+
+<label for="code">Access code (if you were given one)</label>
+<input id="code" type="password" autocomplete="off">
+
+<p><button id="go">Write replies</button></p>
+<div id="status" role="alert"></div>
+<div id="out"></div>
+
+<p class="foot">Drafts are suggestions. Read each reply and edit it before you post it.</p>
+</main>
+<script>
+var $ = function (id) { return document.getElementById(id); };
+var LABEL = { positive: "Positive", neutral: "Neutral", negative: "Negative" };
+
+$("go").addEventListener("click", async function () {
+  var raw = $("reviews").value.trim();
+  var reviews = raw.split(/\n\s*---\s*\n/).map(function (s) { return s.trim(); }).filter(Boolean);
+  $("status").textContent = "";
+  if (!reviews.length) { $("status").textContent = "Paste at least one review."; return; }
+  var btn = $("go"); btn.disabled = true; btn.textContent = "Writing...";
+  try {
+    var res = await fetch("/api/reply", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-access-code": $("code").value.trim() },
+      body: JSON.stringify({
+        business: $("business").value.trim(), tone: $("tone").value,
+        notes: $("notes").value.trim(), reviews: reviews
+      })
+    });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Something went wrong.");
+    render(data.results, reviews.slice(0, 10));
+  } catch (e) {
+    $("status").textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "Write replies";
+  }
+});
+
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function render(results, reviews) {
+  var out = $("out"); out.textContent = "";
+  results.forEach(function (r, i) {
+    var card = el("section", "card" + (r.needs_attention ? " attn" : ""));
+    var badge = el("span", "badge " + (r.needs_attention ? "attn-b" : r.sentiment),
+      r.needs_attention ? "Needs your attention" : LABEL[r.sentiment]);
+    card.appendChild(badge);
+    if (r.needs_attention && r.reason) card.appendChild(el("p", "reason", r.reason));
+    card.appendChild(el("p", "quote", reviews[i]));
+    var ta = el("textarea"); ta.value = r.reply; ta.setAttribute("aria-label", "Draft reply " + (i + 1));
+    card.appendChild(ta);
+    var copy = el("button", "ghost", "Copy reply");
+    copy.style.marginTop = "8px";
+    copy.addEventListener("click", function () {
+      navigator.clipboard.writeText(ta.value).then(function () {
+        copy.textContent = "Copied"; setTimeout(function () { copy.textContent = "Copy reply"; }, 1500);
+      });
+    });
+    card.appendChild(copy);
+    out.appendChild(card);
+  });
+}
+</script>
+</body>
+</html>
